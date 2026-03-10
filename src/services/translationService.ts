@@ -80,6 +80,58 @@ export async function checkProviderStatus(options: TranslationOptions): Promise<
   return { success: false, message: "Unknown provider." };
 }
 
+export async function translatePhilosophicalTextStream(
+  text: string, 
+  options: TranslationOptions,
+  onChunk: (chunk: string) => void
+): Promise<void> {
+  if (!text || text.trim().length === 0) return;
+  
+  try {
+    if (options.provider === 'gemini') {
+      const response = await geminiAi.models.generateContentStream({
+        model: options.model || "gemini-3.1-pro-preview",
+        contents: `${SYSTEM_PROMPT}\n\nText: ${text}`,
+      });
+
+      for await (const chunk of response) {
+        if (chunk.text) {
+          onChunk(chunk.text);
+        }
+      }
+    } else if (options.provider === 'ollama-cloud') {
+      const response = await fetch('/api/translate/ollama-cloud/stream', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text,
+          model: options.model || "minimax",
+          systemPrompt: SYSTEM_PROMPT,
+          host: options.baseUrl || "https://ollama.com"
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Ollama Cloud streaming error: ${response.status}`);
+      }
+
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error("No reader available");
+
+      const decoder = new TextDecoder();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        // The server will send raw text chunks for simplicity
+        onChunk(chunk);
+      }
+    }
+  } catch (error: any) {
+    onChunk(`\n\nError: ${error.message || "Could not connect to the translation service."}`);
+  }
+}
+
 export async function translatePhilosophicalText(text: string, options: TranslationOptions): Promise<string> {
   if (!text || text.trim().length === 0) return "";
   

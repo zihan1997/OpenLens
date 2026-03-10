@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
-import { ChevronUp, ChevronDown, ZoomIn, ZoomOut, Maximize2, Loader2, MousePointer2 } from 'lucide-react';
+import { ChevronUp, ChevronDown, ZoomIn, ZoomOut, Maximize2, Loader2, MousePointer2, Sparkles } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 
 // Set worker URL for pdfjs
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
@@ -13,6 +14,7 @@ interface PdfViewerProps {
   onPageChange?: (page: number) => void;
   onTextSelect?: (text: string) => void;
   onReady?: (isReady: boolean) => void;
+  onTranslateRequest?: (text: string) => void;
 }
 
 export const PdfViewer: React.FC<PdfViewerProps> = ({ 
@@ -20,7 +22,8 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
   initialPage = 1, 
   onPageChange,
   onTextSelect,
-  onReady
+  onReady,
+  onTranslateRequest
 }) => {
   const [numPages, setNumPages] = useState<number>(0);
   const [pageNumber, setPageNumber] = useState<number>(initialPage);
@@ -32,6 +35,9 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
   const hasScrolledToInitial = useRef<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const observerRef = useRef<ResizeObserver | null>(null);
+  
+  const [selectionCoords, setSelectionCoords] = useState<{ x: number, y: number } | null>(null);
+  const [selectedText, setSelectedText] = useState<string>("");
 
   // Memoize pages to prevent re-renders of the entire document when unrelated state changes
   const pages = React.useMemo(() => {
@@ -50,8 +56,6 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
           renderTextLayer={true}
           onRenderTextLayerSuccess={() => {
             renderedPagesRef.current.add(index + 1);
-            // We'll handle the onReady call separately or via a ref-based check
-            // to avoid re-rendering all pages when pageNumber changes
           }}
           loading={
             <div className="flex items-center justify-center bg-white" style={{ width: containerWidth * scale, height: containerWidth * scale * 1.4 }}>
@@ -71,14 +75,12 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
     };
     
     checkReady();
-    // Also check periodically if not ready, as onRenderTextLayerSuccess might have fired
     const interval = setInterval(checkReady, 500);
     return () => clearInterval(interval);
   }, [pageNumber, onReady]);
 
   const updateWidth = useCallback(() => {
     if (containerRef.current) {
-      // Subtract padding
       const width = containerRef.current.clientWidth - 64;
       setContainerWidth(width);
     }
@@ -93,11 +95,35 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
     return () => observerRef.current?.disconnect();
   }, [updateWidth]);
 
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      
+      if (e.key === 'ArrowDown' || e.key === 'j') {
+        if (pageNumber < numPages) scrollToPage(pageNumber + 1);
+      } else if (e.key === 'ArrowUp' || e.key === 'k') {
+        if (pageNumber > 1) scrollToPage(pageNumber - 1);
+      } else if (e.key === '=' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        setScale(s => Math.min(3, s + 0.1));
+      } else if (e.key === '-' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        setScale(s => Math.max(0.2, s - 0.1));
+      } else if (e.key === '0' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        setScale(1.0);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [pageNumber, numPages]);
+
   // Scroll to initial page when document is loaded
   useEffect(() => {
     const fileKey = typeof file === 'string' ? file : (file as File)?.name;
     if (isLoaded && initialPage > 1 && hasScrolledToInitial.current !== fileKey) {
-      // Small delay to ensure DOM is ready
       const timer = setTimeout(() => {
         scrollToPage(initialPage);
         hasScrolledToInitial.current = fileKey || 'unknown';
@@ -111,10 +137,21 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
     setIsLoaded(true);
   }
 
-  const handleMouseUp = () => {
+  const handleMouseUp = (e: React.MouseEvent) => {
     const selection = window.getSelection();
-    if (selection && selection.toString().trim().length > 0) {
-      onTextSelect?.(selection.toString());
+    const text = selection?.toString().trim();
+    
+    if (text && text.length > 0) {
+      setSelectedText(text);
+      onTextSelect?.(text);
+      
+      // Position the floating button
+      setSelectionCoords({
+        x: e.clientX,
+        y: e.clientY - 40
+      });
+    } else {
+      setSelectionCoords(null);
     }
   };
 
@@ -125,7 +162,6 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
     }
   };
 
-  // Track which page is in view
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const container = e.currentTarget;
     const children = container.querySelectorAll('[id^="pdf-page-"]');
@@ -160,7 +196,33 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
   }
 
   return (
-    <div className="flex flex-col h-full bg-sepia/20 rounded-xl overflow-hidden shadow-inner border border-accent/10">
+    <div className="flex flex-col h-full bg-sepia/20 rounded-xl overflow-hidden shadow-inner border border-accent/10 relative">
+      {/* Floating Action Button */}
+      <AnimatePresence>
+        {selectionCoords && (
+          <motion.button
+            initial={{ opacity: 0, scale: 0.8, y: 10 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.8, y: 10 }}
+            style={{ 
+              position: 'fixed', 
+              left: selectionCoords.x, 
+              top: selectionCoords.y,
+              zIndex: 100,
+              transform: 'translateX(-50%)'
+            }}
+            onClick={() => {
+              onTranslateRequest?.(selectedText);
+              setSelectionCoords(null);
+            }}
+            className="bg-accent text-white px-3 py-1.5 rounded-full shadow-xl flex items-center space-x-2 hover:bg-accent/90 transition-all active:scale-95 border border-white/20"
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span className="text-xs font-bold uppercase tracking-tighter">Translate</span>
+          </motion.button>
+        )}
+      </AnimatePresence>
+
       {/* Controls */}
       <div className="flex items-center justify-between px-6 py-3 bg-white/50 backdrop-blur-sm border-b border-accent/10 z-10">
         <div className="flex items-center space-x-4">
@@ -180,7 +242,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
               onClick={() => scrollToPage(pageNumber - 1)} 
               disabled={pageNumber <= 1}
               className="p-1.5 rounded-lg hover:bg-accent/10 disabled:opacity-30 transition-colors"
-              title="Previous Page"
+              title="Previous Page (Up Arrow / K)"
             >
               <ChevronUp className="w-5 h-5" />
             </button>
@@ -188,7 +250,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
               onClick={() => scrollToPage(pageNumber + 1)} 
               disabled={pageNumber >= numPages}
               className="p-1.5 rounded-lg hover:bg-accent/10 disabled:opacity-30 transition-colors"
-              title="Next Page"
+              title="Next Page (Down Arrow / J)"
             >
               <ChevronDown className="w-5 h-5" />
             </button>
@@ -199,7 +261,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
           <button 
             onClick={() => setScale(s => Math.max(0.2, s - 0.1))} 
             className="p-1.5 rounded-full hover:bg-accent/10"
-            title="Zoom Out"
+            title="Zoom Out (Ctrl -)"
           >
             <ZoomOut className="w-5 h-5" />
           </button>
@@ -207,7 +269,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
           <button 
             onClick={() => setScale(s => Math.min(3, s + 0.1))} 
             className="p-1.5 rounded-full hover:bg-accent/10"
-            title="Zoom In"
+            title="Zoom In (Ctrl +)"
           >
             <ZoomIn className="w-5 h-5" />
           </button>
@@ -215,6 +277,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
           <button 
             onClick={() => setScale(1.0)} 
             className="px-3 py-1 text-xs font-medium bg-accent/5 hover:bg-accent/10 rounded-md border border-accent/10 transition-colors"
+            title="Reset Zoom (Ctrl 0)"
           >
             Fit Width
           </button>

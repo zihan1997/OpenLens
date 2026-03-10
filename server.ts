@@ -37,6 +37,40 @@ async function startServer() {
     }
   });
 
+  // Ollama Cloud Streaming Endpoint
+  app.post("/api/translate/ollama-cloud/stream", async (req, res) => {
+    const { text, model, systemPrompt, host } = req.body;
+    
+    const ollama = new Ollama({
+      host: host || "https://ollama.com",
+      headers: {
+        Authorization: "Bearer " + process.env.OLLAMA_API_KEY,
+      },
+    });
+
+    try {
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+      res.setHeader('Transfer-Encoding', 'chunked');
+
+      const response = await ollama.chat({
+        model: model || "minimax",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: `Text: ${text}` }
+        ],
+        stream: true,
+      });
+
+      for await (const part of response) {
+        res.write(part.message.content);
+      }
+      res.end();
+    } catch (error: any) {
+      console.error("Ollama Cloud Streaming error:", error);
+      res.status(500).end(error.message || "Ollama Cloud streaming failed");
+    }
+  });
+
   // Health check for proxy (used by frontend to check cloud host reachability)
   app.get("/api/proxy/health", (req, res) => {
     const { url } = req.query;

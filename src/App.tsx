@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { PdfViewer } from './components/PdfViewer';
-import { translatePhilosophicalText, AIProvider, TranslationOptions, checkProviderStatus } from './services/translationService';
+import { translatePhilosophicalTextStream, AIProvider, TranslationOptions, checkProviderStatus } from './services/translationService';
 import { 
   BookOpen, 
   Languages, 
@@ -115,9 +115,12 @@ export default function App() {
     }
   };
 
-  const handleTranslate = async () => {
-    if (!selectedText) return;
+  const handleTranslate = async (overrideText?: string) => {
+    const textToTranslate = overrideText || selectedText;
+    if (!textToTranslate) return;
+    
     setIsTranslating(true);
+    setTranslation(""); // Clear previous translation
     
     const options: TranslationOptions = {
       provider,
@@ -127,8 +130,9 @@ export default function App() {
     };
 
     try {
-      const result = await translatePhilosophicalText(selectedText, options);
-      setTranslation(result);
+      await translatePhilosophicalTextStream(textToTranslate, options, (chunk) => {
+        setTranslation(prev => prev + chunk);
+      });
     } finally {
       setIsTranslating(false);
     }
@@ -140,8 +144,65 @@ export default function App() {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const [isDragging, setIsDragging] = useState(false);
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = () => {
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const droppedFile = e.dataTransfer.files?.[0];
+    if (droppedFile && droppedFile.type === 'application/pdf') {
+      setFile(droppedFile);
+      setFileName(droppedFile.name);
+      setTranslation("");
+      setSelectedText("");
+      setIsPdfReady(false);
+    }
+  };
+
+  const clearProgress = () => {
+    if (fileName) {
+      localStorage.removeItem(`progress_${fileName}`);
+      setCurrentPage(1);
+      // Force re-render of PdfViewer
+      setFileName(prev => prev + " ");
+      setTimeout(() => setFileName(prev => prev.trim()), 0);
+    }
+  };
+
   return (
-    <div className="flex h-screen w-full bg-paper overflow-hidden">
+    <div 
+      className="flex h-screen w-full bg-paper overflow-hidden relative"
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      {/* Drag Overlay */}
+      <AnimatePresence>
+        {isDragging && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] bg-accent/20 backdrop-blur-md flex items-center justify-center border-4 border-dashed border-accent m-4 rounded-3xl"
+          >
+            <div className="flex flex-col items-center space-y-4 text-accent">
+              <Upload className="w-20 h-20 animate-bounce" />
+              <h2 className="serif text-4xl font-bold">Drop your manuscript here</h2>
+              <p className="text-lg font-medium opacity-60">Release to begin reading</p>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Main Content */}
       <main className="flex-1 flex flex-col md:flex-row h-full overflow-hidden">
         
@@ -186,6 +247,7 @@ export default function App() {
               onPageChange={handlePageChange}
               onTextSelect={setSelectedText}
               onReady={setIsPdfReady}
+              onTranslateRequest={handleTranslate}
             />
           </div>
         </section>
@@ -227,7 +289,7 @@ export default function App() {
               
               {selectedText && (
                 <button 
-                  onClick={handleTranslate}
+                  onClick={() => handleTranslate()}
                   disabled={isTranslating}
                   className="w-full py-3 bg-accent text-white rounded-xl font-medium shadow-lg shadow-accent/20 hover:bg-accent/90 transition-all active:scale-[0.98] flex items-center justify-center space-x-2 disabled:opacity-50 mt-4"
                 >
@@ -407,6 +469,16 @@ export default function App() {
                       )}
                       <span>{healthStatus.message}</span>
                     </motion.div>
+                  )}
+
+                  {fileName && (
+                    <button 
+                      onClick={clearProgress}
+                      className="w-full mt-4 py-2.5 px-4 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl text-sm font-bold flex items-center justify-center space-x-2 transition-all active:scale-95"
+                    >
+                      <History className="w-4 h-4" />
+                      <span>Reset Reading Progress</span>
+                    </button>
                   )}
                 </div>
               </div>
