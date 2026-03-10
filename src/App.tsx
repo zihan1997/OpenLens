@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { PdfViewer } from './components/PdfViewer';
 import { translatePhilosophicalText, AIProvider, TranslationOptions, checkProviderStatus } from './services/translationService';
 import { 
@@ -29,6 +29,7 @@ export default function App() {
   const [selectedText, setSelectedText] = useState<string>("");
   const [translation, setTranslation] = useState<string>("");
   const [isTranslating, setIsTranslating] = useState<boolean>(false);
+  const [isPdfReady, setIsPdfReady] = useState<boolean>(false);
   const [copied, setCopied] = useState<boolean>(false);
   const [showSettings, setShowSettings] = useState<boolean>(false);
 
@@ -95,12 +96,12 @@ export default function App() {
   }, [showSettings]);
 
   // Save progress to localStorage
-  const handlePageChange = (page: number) => {
+  const handlePageChange = useCallback((page: number) => {
     setCurrentPage(page);
     if (fileName) {
       localStorage.setItem(`progress_${fileName}`, page.toString());
     }
-  };
+  }, [fileName]);
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const uploadedFile = event.target.files?.[0];
@@ -110,6 +111,7 @@ export default function App() {
       // Reset state for new book
       setTranslation("");
       setSelectedText("");
+      setIsPdfReady(false);
     }
   };
 
@@ -146,15 +148,15 @@ export default function App() {
         {/* Left: PDF Viewer */}
         <section className="flex-1 h-full p-4 md:p-6 flex flex-col overflow-hidden">
           <header className="mb-6 flex items-center justify-between border-b border-accent/10 pb-4">
-            <div className="flex items-center space-x-4">
-              <div className="w-10 h-10 rounded-xl bg-accent flex items-center justify-center text-white shadow-lg shadow-accent/20">
+            <div className="flex items-center space-x-4 min-w-0">
+              <div className="w-10 h-10 rounded-xl bg-accent flex items-center justify-center text-white shadow-lg shadow-accent/20 shrink-0">
                 <BookOpen className="w-6 h-6" />
               </div>
-              <div>
-                <h1 className="serif text-3xl font-semibold tracking-tight text-accent">
+              <div className="min-w-0">
+                <h1 className="serif text-3xl font-semibold tracking-tight text-accent truncate max-w-[300px] md:max-w-[500px]">
                   {fileName ? fileName.replace('.pdf', '') : "OpenLens"}
                 </h1>
-                <p className="text-sm text-accent/60 font-medium">
+                <p className="text-sm text-accent/60 font-medium truncate">
                   {fileName ? `Reading your manuscript` : "Select a philosophical text to begin"}
                 </p>
               </div>
@@ -176,13 +178,14 @@ export default function App() {
             </div>
           </header>
 
-          <div className="flex-1 min-h-0">
+          <div className="flex-1 min-h-0 relative">
             <PdfViewer 
               key={fileName || 'empty'}
               file={file} 
               initialPage={currentPage}
               onPageChange={handlePageChange}
               onTextSelect={setSelectedText}
+              onReady={setIsPdfReady}
             />
           </div>
         </section>
@@ -199,7 +202,7 @@ export default function App() {
             <div className="flex items-center space-x-2 px-2 py-1 bg-accent/5 rounded-full border border-accent/10">
               <div className={`w-2 h-2 rounded-full ${provider === 'gemini' ? 'bg-blue-500' : 'bg-emerald-500'}`} />
               <span className="text-[10px] font-bold uppercase tracking-tighter text-accent/60">
-                {provider === 'gemini' ? 'Gemini 3.1 Pro' : `Cloud: ${ollamaModel}`}
+                {provider === 'gemini' ? 'Gemini 3.1 Pro' : `Ollama: ${ollamaModel}`}
               </span>
             </div>
           </div>
@@ -322,7 +325,7 @@ export default function App() {
                       className={`flex flex-col items-center justify-center space-y-1 p-3 rounded-xl border-2 transition-all ${provider === 'ollama-cloud' ? 'border-accent bg-accent/5 text-accent' : 'border-accent/5 hover:border-accent/20 text-accent/40'}`}
                     >
                       <Globe className="w-4 h-4" />
-                      <span className="text-[10px] font-bold uppercase">Cloud</span>
+                      <span className="text-[10px] font-bold uppercase">Ollama</span>
                     </button>
                   </div>
                 </div>
@@ -337,9 +340,9 @@ export default function App() {
                     <div className="p-3 bg-blue-50 rounded-xl border border-blue-100 text-blue-800 text-[10px] leading-relaxed">
                       <p className="font-bold mb-1 flex items-center">
                         <Globe className="w-3 h-3 mr-1" />
-                        Ollama Cloud (Hosted)
+                        Ollama Cloud
                       </p>
-                      Using the official Ollama SDK to connect to <strong>ollama.com</strong>. Make sure your <strong>OLLAMA_API_KEY</strong> is set in the Secrets panel.
+                      Connect to a hosted Ollama service. Make sure your <strong>OLLAMA_API_KEY</strong> is set in the Secrets panel.
                     </div>
                     <div className="space-y-2">
                       <label className="text-xs font-bold text-accent/60 flex items-center">

@@ -12,24 +12,70 @@ interface PdfViewerProps {
   initialPage?: number;
   onPageChange?: (page: number) => void;
   onTextSelect?: (text: string) => void;
+  onReady?: (isReady: boolean) => void;
 }
 
 export const PdfViewer: React.FC<PdfViewerProps> = ({ 
   file, 
   initialPage = 1, 
   onPageChange,
-  onTextSelect 
+  onTextSelect,
+  onReady
 }) => {
   const [numPages, setNumPages] = useState<number>(0);
   const [pageNumber, setPageNumber] = useState<number>(initialPage);
   const [scale, setScale] = useState<number>(1.0);
   const [containerWidth, setContainerWidth] = useState<number>(800);
   const [isLoaded, setIsLoaded] = useState<boolean>(false);
+  const renderedPagesRef = useRef<Set<number>>(new Set());
+  const [isCurrentPageReady, setIsCurrentPageReady] = useState<boolean>(false);
   const hasScrolledToInitial = useRef<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const observerRef = useRef<ResizeObserver | null>(null);
 
-  // Auto-fit width logic
+  // Memoize pages to prevent re-renders of the entire document when unrelated state changes
+  const pages = React.useMemo(() => {
+    if (numPages <= 0) return null;
+    return Array.from(new Array(numPages), (el, index) => (
+      <div 
+        key={`page_${index + 1}`} 
+        id={`pdf-page-${index + 1}`}
+        className="shadow-2xl bg-white"
+      >
+        <Page 
+          pageNumber={index + 1} 
+          width={containerWidth}
+          scale={scale}
+          renderAnnotationLayer={true}
+          renderTextLayer={true}
+          onRenderTextLayerSuccess={() => {
+            renderedPagesRef.current.add(index + 1);
+            // We'll handle the onReady call separately or via a ref-based check
+            // to avoid re-rendering all pages when pageNumber changes
+          }}
+          loading={
+            <div className="flex items-center justify-center bg-white" style={{ width: containerWidth * scale, height: containerWidth * scale * 1.4 }}>
+              <Loader2 className="w-6 h-6 animate-spin text-accent/20" />
+            </div>
+          }
+        />
+      </div>
+    ));
+  }, [numPages, containerWidth, scale]);
+  
+  useEffect(() => {
+    const checkReady = () => {
+      const isReady = renderedPagesRef.current.has(pageNumber);
+      setIsCurrentPageReady(isReady);
+      onReady?.(isReady);
+    };
+    
+    checkReady();
+    // Also check periodically if not ready, as onRenderTextLayerSuccess might have fired
+    const interval = setInterval(checkReady, 500);
+    return () => clearInterval(interval);
+  }, [pageNumber, onReady]);
+
   const updateWidth = useCallback(() => {
     if (containerRef.current) {
       // Subtract padding
@@ -95,6 +141,10 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
     if (currentInView !== pageNumber) {
       setPageNumber(currentInView);
       onPageChange?.(currentInView);
+      
+      const isReady = renderedPagesRef.current.has(currentInView);
+      setIsCurrentPageReady(isReady);
+      onReady?.(isReady);
     }
   };
 
@@ -118,6 +168,12 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
             <span className="serif text-lg font-medium">
               Page {pageNumber} <span className="text-accent/40 mx-1">/</span> {numPages}
             </span>
+            {isCurrentPageReady && (
+              <div className="flex items-center space-x-1 ml-2 pl-2 border-l border-accent/10">
+                <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
+                <span className="text-[9px] text-emerald-600 font-bold uppercase tracking-tighter">Ready</span>
+              </div>
+            )}
           </div>
           <div className="flex space-x-1">
             <button 
@@ -181,26 +237,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
             </div>
           }
         >
-          {Array.from(new Array(numPages), (el, index) => (
-            <div 
-              key={`page_${index + 1}`} 
-              id={`pdf-page-${index + 1}`}
-              className="shadow-2xl bg-white"
-            >
-              <Page 
-                pageNumber={index + 1} 
-                width={containerWidth}
-                scale={scale}
-                renderAnnotationLayer={true}
-                renderTextLayer={true}
-                loading={
-                  <div className="flex items-center justify-center bg-white" style={{ width: containerWidth * scale, height: containerWidth * scale * 1.4 }}>
-                    <Loader2 className="w-6 h-6 animate-spin text-accent/20" />
-                  </div>
-                }
-              />
-            </div>
-          ))}
+          {pages}
         </Document>
       </div>
       
