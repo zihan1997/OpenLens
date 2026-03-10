@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { PdfViewer } from './components/PdfViewer';
-import { translatePhilosophicalText } from './services/geminiService';
+import { translatePhilosophicalText, AIProvider, TranslationOptions, checkProviderStatus } from './services/translationService';
 import { 
   BookOpen, 
   Languages, 
@@ -12,7 +12,13 @@ import {
   Quote,
   Copy,
   Check,
-  Loader2
+  Loader2,
+  X,
+  Cpu,
+  Globe,
+  Database,
+  Activity,
+  AlertCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -24,6 +30,44 @@ export default function App() {
   const [translation, setTranslation] = useState<string>("");
   const [isTranslating, setIsTranslating] = useState<boolean>(false);
   const [copied, setCopied] = useState<boolean>(false);
+  const [showSettings, setShowSettings] = useState<boolean>(false);
+
+  // Health check state
+  const [healthStatus, setHealthStatus] = useState<{ success?: boolean; message?: string }>({});
+  const [isCheckingHealth, setIsCheckingHealth] = useState<boolean>(false);
+
+  // AI Settings
+  const [provider, setProvider] = useState<AIProvider>(() => {
+    return (localStorage.getItem('ai_provider') as AIProvider) || 'gemini';
+  });
+  const [ollamaModel, setOllamaModel] = useState<string>(() => {
+    return localStorage.getItem('ollama_model') || 'minimax';
+  });
+  const [ollamaApiKey, setOllamaApiKey] = useState<string>(() => {
+    return localStorage.getItem('ollama_api_key') || '';
+  });
+  const [cloudHost, setCloudHost] = useState<string>(() => {
+    return localStorage.getItem('cloud_host') || 'https://ollama.com';
+  });
+
+  const handleTestConnection = async () => {
+    setIsCheckingHealth(true);
+    setHealthStatus({});
+    
+    const options: TranslationOptions = {
+      provider,
+      model: ollamaModel,
+      baseUrl: provider === 'ollama-cloud' ? cloudHost : undefined,
+      apiKey: ollamaApiKey,
+    };
+
+    try {
+      const result = await checkProviderStatus(options);
+      setHealthStatus(result);
+    } finally {
+      setIsCheckingHealth(false);
+    }
+  };
 
   // Load progress from localStorage
   useEffect(() => {
@@ -34,6 +78,21 @@ export default function App() {
       }
     }
   }, [fileName]);
+
+  // Save AI settings to localStorage
+  useEffect(() => {
+    localStorage.setItem('ai_provider', provider);
+    localStorage.setItem('ollama_model', ollamaModel);
+    localStorage.setItem('ollama_api_key', ollamaApiKey);
+    localStorage.setItem('cloud_host', cloudHost);
+    setHealthStatus({}); // Reset health status when settings change
+  }, [provider, ollamaModel, ollamaApiKey, cloudHost]);
+
+  useEffect(() => {
+    if (showSettings) {
+      setHealthStatus({});
+    }
+  }, [showSettings]);
 
   // Save progress to localStorage
   const handlePageChange = (page: number) => {
@@ -57,8 +116,16 @@ export default function App() {
   const handleTranslate = async () => {
     if (!selectedText) return;
     setIsTranslating(true);
+    
+    const options: TranslationOptions = {
+      provider,
+      model: ollamaModel,
+      baseUrl: provider === 'ollama-cloud' ? cloudHost : undefined,
+      apiKey: ollamaApiKey,
+    };
+
     try {
-      const result = await translatePhilosophicalText(selectedText);
+      const result = await translatePhilosophicalText(selectedText, options);
       setTranslation(result);
     } finally {
       setIsTranslating(false);
@@ -85,7 +152,7 @@ export default function App() {
               </div>
               <div>
                 <h1 className="serif text-3xl font-semibold tracking-tight text-accent">
-                  {fileName ? fileName.replace('.pdf', '') : "Sophia Reader"}
+                  {fileName ? fileName.replace('.pdf', '') : "OpenLens"}
                 </h1>
                 <p className="text-sm text-accent/60 font-medium">
                   {fileName ? `Reading your manuscript` : "Select a philosophical text to begin"}
@@ -94,6 +161,13 @@ export default function App() {
             </div>
             
             <div className="flex items-center space-x-3">
+              <button 
+                onClick={() => setShowSettings(true)}
+                className="p-2 hover:bg-accent/10 rounded-full text-accent transition-colors"
+                title="AI Settings"
+              >
+                <Settings className="w-5 h-5" />
+              </button>
               <label className="flex items-center space-x-2 px-4 py-2 bg-accent text-white rounded-full cursor-pointer hover:bg-accent/90 transition-all shadow-md active:scale-95">
                 <Upload className="w-4 h-4" />
                 <span className="text-sm font-medium">{file ? "Change Book" : "Open Manuscript"}</span>
@@ -122,7 +196,12 @@ export default function App() {
               </div>
               <h2 className="serif text-2xl font-semibold">AI Translation</h2>
             </div>
-            <Sparkles className="w-5 h-5 text-accent/40 animate-pulse" />
+            <div className="flex items-center space-x-2 px-2 py-1 bg-accent/5 rounded-full border border-accent/10">
+              <div className={`w-2 h-2 rounded-full ${provider === 'gemini' ? 'bg-blue-500' : 'bg-emerald-500'}`} />
+              <span className="text-[10px] font-bold uppercase tracking-tighter text-accent/60">
+                {provider === 'gemini' ? 'Gemini 3.1 Pro' : `Cloud: ${ollamaModel}`}
+              </span>
+            </div>
           </div>
 
           <div className="flex-1 flex flex-col space-y-6 overflow-y-auto pr-2">
@@ -143,20 +222,6 @@ export default function App() {
                 {selectedText || "Select text in the PDF to translate..."}
               </div>
               
-              {/* Debug: Selected Words List */}
-              {selectedText && (
-                <div className="flex flex-wrap gap-1 mt-2">
-                  {selectedText.split(/\s+/).filter(Boolean).slice(0, 10).map((word, i) => (
-                    <span key={i} className="px-1.5 py-0.5 bg-accent/5 rounded text-[10px] font-mono text-accent/60 border border-accent/5">
-                      {word.replace(/[.,/#!$%^&*;:{}=\-_`~()]/g, "")}
-                    </span>
-                  ))}
-                  {selectedText.split(/\s+/).filter(Boolean).length > 10 && (
-                    <span className="text-[10px] text-accent/30 self-center">...</span>
-                  )}
-                </div>
-              )}
-
               {selectedText && (
                 <button 
                   onClick={handleTranslate}
@@ -205,7 +270,7 @@ export default function App() {
 
           <footer className="mt-6 pt-6 border-t border-accent/10">
             <div className="flex items-center justify-between text-xs text-accent/40 font-medium">
-              <span>Powered by Gemini 3.1 Pro</span>
+              <span>Powered by {provider === 'gemini' ? 'Gemini 3.1 Pro' : 'Ollama Cloud'}</span>
               <div className="flex items-center space-x-1">
                 <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                 <span>AI Scholar Online</span>
@@ -214,6 +279,147 @@ export default function App() {
           </footer>
         </section>
       </main>
+
+      {/* Settings Modal */}
+      <AnimatePresence>
+        {showSettings && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden"
+            >
+              <div className="p-6 border-b border-accent/10 flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <Settings className="w-5 h-5 text-accent" />
+                  <h3 className="serif text-xl font-semibold">AI Settings</h3>
+                </div>
+                <button 
+                  onClick={() => setShowSettings(false)}
+                  className="p-2 hover:bg-accent/5 rounded-full text-accent/40 transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="p-6 space-y-6">
+                {/* Provider Selection */}
+                <div className="space-y-3">
+                  <label className="text-xs font-bold uppercase tracking-widest text-accent/40 block">
+                    AI Service Provider
+                  </label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button 
+                      onClick={() => setProvider('gemini')}
+                      className={`flex flex-col items-center justify-center space-y-1 p-3 rounded-xl border-2 transition-all ${provider === 'gemini' ? 'border-accent bg-accent/5 text-accent' : 'border-accent/5 hover:border-accent/20 text-accent/40'}`}
+                    >
+                      <Sparkles className="w-4 h-4" />
+                      <span className="text-[10px] font-bold uppercase">Gemini</span>
+                    </button>
+                    <button 
+                      onClick={() => setProvider('ollama-cloud')}
+                      className={`flex flex-col items-center justify-center space-y-1 p-3 rounded-xl border-2 transition-all ${provider === 'ollama-cloud' ? 'border-accent bg-accent/5 text-accent' : 'border-accent/5 hover:border-accent/20 text-accent/40'}`}
+                    >
+                      <Globe className="w-4 h-4" />
+                      <span className="text-[10px] font-bold uppercase">Cloud</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Ollama Cloud Config */}
+                {provider === 'ollama-cloud' && (
+                  <motion.div 
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    className="space-y-4 pt-4 border-t border-accent/5"
+                  >
+                    <div className="p-3 bg-blue-50 rounded-xl border border-blue-100 text-blue-800 text-[10px] leading-relaxed">
+                      <p className="font-bold mb-1 flex items-center">
+                        <Globe className="w-3 h-3 mr-1" />
+                        Ollama Cloud (Hosted)
+                      </p>
+                      Using the official Ollama SDK to connect to <strong>ollama.com</strong>. Make sure your <strong>OLLAMA_API_KEY</strong> is set in the Secrets panel.
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-accent/60 flex items-center">
+                        <Globe className="w-3 h-3 mr-1.5" />
+                        Cloud API Host
+                      </label>
+                      <input 
+                        type="text" 
+                        value={cloudHost}
+                        onChange={(e) => setCloudHost(e.target.value)}
+                        placeholder="e.g., https://ollama.com"
+                        className="w-full p-3 bg-accent/5 border border-accent/10 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-accent/20"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-accent/60 flex items-center">
+                        <Database className="w-3 h-3 mr-1.5" />
+                        Cloud Model Name
+                      </label>
+                      <input 
+                        type="text" 
+                        value={ollamaModel}
+                        onChange={(e) => setOllamaModel(e.target.value)}
+                        placeholder="e.g., minimax, gpt-oss:120b"
+                        className="w-full p-3 bg-accent/5 border border-accent/10 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-accent/20"
+                      />
+                    </div>
+                  </motion.div>
+                )}
+
+                {provider === 'gemini' && (
+                  <div className="p-4 bg-blue-50 rounded-2xl border border-blue-100 text-blue-800 text-sm">
+                    Using Google's <strong>Gemini 3.1 Pro</strong>. This model is highly optimized for complex philosophical reasoning and scholarly translation.
+                  </div>
+                )}
+
+                {/* Health Check Section */}
+                <div className="pt-4 border-t border-accent/5">
+                  <button 
+                    onClick={handleTestConnection}
+                    disabled={isCheckingHealth}
+                    className="w-full py-2.5 px-4 bg-accent/5 hover:bg-accent/10 text-accent rounded-xl text-sm font-bold flex items-center justify-center space-x-2 transition-all active:scale-95 disabled:opacity-50"
+                  >
+                    {isCheckingHealth ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Activity className="w-4 h-4" />
+                    )}
+                    <span>Test Connection</span>
+                  </button>
+                  
+                  {healthStatus.message && (
+                    <motion.div 
+                      initial={{ opacity: 0, y: 5 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className={`mt-3 p-3 rounded-xl text-xs flex items-start space-x-2 ${healthStatus.success ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-rose-50 text-rose-700 border border-rose-100'}`}
+                    >
+                      {healthStatus.success ? (
+                        <Check className="w-4 h-4 mt-0.5 shrink-0" />
+                      ) : (
+                        <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                      )}
+                      <span>{healthStatus.message}</span>
+                    </motion.div>
+                  )}
+                </div>
+              </div>
+
+              <div className="p-6 bg-accent/5 flex justify-end">
+                <button 
+                  onClick={() => setShowSettings(false)}
+                  className="px-6 py-2 bg-accent text-white rounded-xl font-medium hover:bg-accent/90 transition-all active:scale-95 shadow-lg shadow-accent/10"
+                >
+                  Save & Close
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
