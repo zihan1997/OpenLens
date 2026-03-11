@@ -9,6 +9,7 @@ import {
   Upload, 
   Sparkles,
   ChevronRight,
+  ChevronLeft,
   Quote,
   Copy,
   Check,
@@ -32,6 +33,9 @@ export default function App() {
   const [isPdfReady, setIsPdfReady] = useState<boolean>(false);
   const [copied, setCopied] = useState<boolean>(false);
   const [showSettings, setShowSettings] = useState<boolean>(false);
+  const [sidebarWidth, setSidebarWidth] = useState<number>(500);
+  const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(true);
+  const [isResizing, setIsResizing] = useState<boolean>(false);
 
   // Health check state
   const [healthStatus, setHealthStatus] = useState<{ success?: boolean; message?: string }>({});
@@ -178,6 +182,33 @@ export default function App() {
     }
   };
 
+  const startResizing = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsResizing(true);
+  }, []);
+
+  const stopResizing = useCallback(() => {
+    setIsResizing(false);
+  }, []);
+
+  const resize = useCallback((e: MouseEvent) => {
+    if (isResizing) {
+      const newWidth = window.innerWidth - e.clientX;
+      if (newWidth > 300 && newWidth < 800) {
+        setSidebarWidth(newWidth);
+      }
+    }
+  }, [isResizing]);
+
+  useEffect(() => {
+    window.addEventListener('mousemove', resize);
+    window.addEventListener('mouseup', stopResizing);
+    return () => {
+      window.removeEventListener('mousemove', resize);
+      window.removeEventListener('mouseup', stopResizing);
+    };
+  }, [resize, stopResizing]);
+
   return (
     <div 
       className="flex h-screen w-full bg-paper overflow-hidden relative"
@@ -204,7 +235,7 @@ export default function App() {
       </AnimatePresence>
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col md:flex-row h-full overflow-hidden">
+      <main className="flex-1 flex h-full overflow-hidden relative">
         
         {/* Left: PDF Viewer */}
         <section className="flex-1 h-full p-4 md:p-6 flex flex-col overflow-hidden">
@@ -252,97 +283,136 @@ export default function App() {
           </div>
         </section>
 
+        {/* Sidebar Toggle Button (Floating) */}
+        <button
+          onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+          className={`fixed right-0 top-1/2 -translate-y-1/2 z-40 bg-accent text-white p-2 rounded-l-xl shadow-xl transition-all hover:pr-4 ${isSidebarOpen ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}
+          title="Open Translation Panel"
+        >
+          <ChevronLeft className="w-6 h-6" />
+        </button>
+
         {/* Right: AI Translation Panel */}
-        <section className="w-full md:w-[400px] lg:w-[500px] h-full bg-sepia/10 border-l border-accent/10 flex flex-col p-6 overflow-hidden">
-          <div className="flex items-center justify-between mb-8">
-            <div className="flex items-center space-x-2">
-              <div className="p-2 bg-accent/10 rounded-lg text-accent">
-                <Languages className="w-5 h-5" />
-              </div>
-              <h2 className="serif text-2xl font-semibold">AI Translation</h2>
-            </div>
-            <div className="flex items-center space-x-2 px-2 py-1 bg-accent/5 rounded-full border border-accent/10">
-              <div className={`w-2 h-2 rounded-full ${provider === 'gemini' ? 'bg-blue-500' : 'bg-emerald-500'}`} />
-              <span className="text-[10px] font-bold uppercase tracking-tighter text-accent/60">
-                {provider === 'gemini' ? 'Gemini 3.1 Pro' : `Ollama: ${ollamaModel}`}
-              </span>
+        <motion.section 
+          initial={false}
+          animate={{ 
+            width: isSidebarOpen ? sidebarWidth : 0,
+            opacity: isSidebarOpen ? 1 : 0,
+            x: isSidebarOpen ? 0 : 20
+          }}
+          transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+          className="h-full bg-sepia/10 border-l border-accent/10 flex flex-col overflow-hidden relative"
+        >
+          {/* Resize Handle */}
+          <div 
+            onMouseDown={startResizing}
+            className="absolute left-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-accent/30 transition-colors z-50 group"
+          >
+            <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-4 h-12 bg-accent/10 rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+              <div className="w-0.5 h-6 bg-accent/40 rounded-full" />
             </div>
           </div>
 
-          <div className="flex-1 flex flex-col space-y-6 overflow-y-auto pr-2">
-            {/* Selected Text */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center text-xs font-bold uppercase tracking-widest text-accent/40">
-                  <Quote className="w-3 h-3 mr-2" />
-                  Selected Passage
+          <div className="flex-1 flex flex-col p-6 min-w-[300px]">
+            <div className="flex items-center justify-between mb-8">
+              <div className="flex items-center space-x-2">
+                <div className="p-2 bg-accent/10 rounded-lg text-accent">
+                  <Languages className="w-5 h-5" />
                 </div>
-                {selectedText && (
-                  <div className="text-[10px] font-mono text-accent/30">
-                    {selectedText.split(/\s+/).filter(Boolean).length} words
+                <h2 className="serif text-2xl font-semibold whitespace-nowrap">AI Translation</h2>
+              </div>
+              <div className="flex items-center space-x-2">
+                <div className="hidden lg:flex items-center space-x-2 px-2 py-1 bg-accent/5 rounded-full border border-accent/10">
+                  <div className={`w-2 h-2 rounded-full ${provider === 'gemini' ? 'bg-blue-500' : 'bg-emerald-500'}`} />
+                  <span className="text-[10px] font-bold uppercase tracking-tighter text-accent/60">
+                    {provider === 'gemini' ? 'Gemini 3.1 Pro' : `Ollama: ${ollamaModel}`}
+                  </span>
+                </div>
+                <button 
+                  onClick={() => setIsSidebarOpen(false)}
+                  className="p-1.5 hover:bg-accent/10 rounded-lg text-accent transition-colors"
+                  title="Collapse Panel"
+                >
+                  <ChevronRight className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            <div className="flex-1 flex flex-col space-y-6 overflow-y-auto pr-2">
+              {/* Selected Text */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center text-xs font-bold uppercase tracking-widest text-accent/40">
+                    <Quote className="w-3 h-3 mr-2" />
+                    Selected Passage
                   </div>
+                  {selectedText && (
+                    <div className="text-[10px] font-mono text-accent/30">
+                      {selectedText.split(/\s+/).filter(Boolean).length} words
+                    </div>
+                  )}
+                </div>
+                <div className="p-4 bg-white/60 rounded-2xl border border-accent/5 serif italic text-lg leading-relaxed text-ink/80 min-h-[100px] max-h-[200px] overflow-y-auto">
+                  {selectedText || "Select text in the PDF to translate..."}
+                </div>
+                
+                {selectedText && (
+                  <button 
+                    onClick={() => handleTranslate()}
+                    disabled={isTranslating}
+                    className="w-full py-3 bg-accent text-white rounded-xl font-medium shadow-lg shadow-accent/20 hover:bg-accent/90 transition-all active:scale-[0.98] flex items-center justify-center space-x-2 disabled:opacity-50 mt-4"
+                  >
+                    {isTranslating ? (
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                    ) : (
+                      <>
+                        <Sparkles className="w-4 h-4" />
+                        <span>Deep Translation</span>
+                      </>
+                    )}
+                  </button>
                 )}
               </div>
-              <div className="p-4 bg-white/60 rounded-2xl border border-accent/5 serif italic text-lg leading-relaxed text-ink/80 min-h-[100px] max-h-[200px] overflow-y-auto">
-                {selectedText || "Select text in the PDF to translate..."}
-              </div>
-              
-              {selectedText && (
-                <button 
-                  onClick={() => handleTranslate()}
-                  disabled={isTranslating}
-                  className="w-full py-3 bg-accent text-white rounded-xl font-medium shadow-lg shadow-accent/20 hover:bg-accent/90 transition-all active:scale-[0.98] flex items-center justify-center space-x-2 disabled:opacity-50 mt-4"
-                >
-                  {isTranslating ? (
-                    <Loader2 className="w-5 h-5 animate-spin" />
-                  ) : (
-                    <>
-                      <Sparkles className="w-4 h-4" />
-                      <span>Deep Translation</span>
-                    </>
-                  )}
-                </button>
-              )}
-            </div>
 
-            {/* Translation Result */}
-            <AnimatePresence mode="wait">
-              {translation && (
-                <motion.div 
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -20 }}
-                  className="space-y-2"
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="text-xs font-bold uppercase tracking-widest text-accent/40">
-                      Philosophical Rendering
+              {/* Translation Result */}
+              <AnimatePresence mode="wait">
+                {translation && (
+                  <motion.div 
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -20 }}
+                    className="space-y-2"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="text-xs font-bold uppercase tracking-widest text-accent/40">
+                        Philosophical Rendering
+                      </div>
+                      <button 
+                        onClick={copyToClipboard}
+                        className="p-2 hover:bg-accent/10 rounded-lg text-accent transition-colors"
+                      >
+                        {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                      </button>
                     </div>
-                    <button 
-                      onClick={copyToClipboard}
-                      className="p-2 hover:bg-accent/10 rounded-lg text-accent transition-colors"
-                    >
-                      {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                    </button>
-                  </div>
-                  <div className="p-6 bg-accent/5 rounded-2xl border border-accent/10 serif text-xl leading-relaxed text-ink whitespace-pre-wrap">
-                    {translation}
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-
-          <footer className="mt-6 pt-6 border-t border-accent/10">
-            <div className="flex items-center justify-between text-xs text-accent/40 font-medium">
-              <span>Powered by {provider === 'gemini' ? 'Gemini 3.1 Pro' : 'Ollama Cloud'}</span>
-              <div className="flex items-center space-x-1">
-                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                <span>AI Scholar Online</span>
-              </div>
+                    <div className="p-6 bg-accent/5 rounded-2xl border border-accent/10 serif text-xl leading-relaxed text-ink whitespace-pre-wrap">
+                      {translation}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
-          </footer>
-        </section>
+
+            <footer className="mt-6 pt-6 border-t border-accent/10">
+              <div className="flex items-center justify-between text-xs text-accent/40 font-medium">
+                <span className="truncate mr-2">Powered by {provider === 'gemini' ? 'Gemini 3.1 Pro' : 'Ollama Cloud'}</span>
+                <div className="flex items-center space-x-1 shrink-0">
+                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  <span>AI Scholar</span>
+                </div>
+              </div>
+            </footer>
+          </div>
+        </motion.section>
       </main>
 
       {/* Settings Modal */}
