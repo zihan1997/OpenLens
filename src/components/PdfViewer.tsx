@@ -225,7 +225,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
               <div className="p-4 border-b border-accent/10 flex items-center justify-between bg-accent/5">
                 <h3 className="serif font-bold text-accent flex items-center">
                   <List className="w-4 h-4 mr-2" />
-                  Table of Contents
+                  目录
                 </h3>
                 <button 
                   onClick={() => setShowOutline(false)}
@@ -265,10 +265,10 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
               onTranslateRequest?.(selectedText);
               setSelectionCoords(null);
             }}
-            className="bg-accent text-white px-3 py-1.5 rounded-full shadow-xl flex items-center space-x-2 hover:bg-accent/90 transition-all active:scale-95 border border-white/20"
+            className="bg-accent text-white px-3 py-1.5 rounded-full shadow-xl flex items-center space-x-2 hover:bg-accent/90 transition-all active:scale-[0.98] border border-white/20"
           >
             <Sparkles className="w-3.5 h-3.5" />
-            <span className="text-xs font-bold uppercase tracking-tighter">Translate</span>
+            <span className="text-xs font-bold uppercase tracking-tighter">翻译</span>
           </motion.button>
         )}
       </AnimatePresence>
@@ -279,18 +279,18 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
           <button
             onClick={() => setShowOutline(true)}
             className="p-2 hover:bg-accent/10 rounded-lg transition-colors text-accent"
-            title="Table of Contents"
+            title="目录"
           >
             <List className="w-5 h-5" />
           </button>
           <div className="flex items-center bg-accent/5 rounded-lg px-3 py-1 border border-accent/10">
             <span className="serif text-lg font-medium">
-              Page {pageNumber} <span className="text-accent/40 mx-1">/</span> {numPages}
+              第 {pageNumber} 页 <span className="text-accent/40 mx-1">/</span> 共 {numPages} 页
             </span>
             {isCurrentPageReady && (
               <div className="flex items-center space-x-1 ml-2 pl-2 border-l border-accent/10">
                 <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
-                <span className="text-[9px] text-emerald-600 font-bold uppercase tracking-tighter">Ready</span>
+                <span className="text-[9px] text-emerald-600 font-bold uppercase tracking-tighter">已就绪</span>
               </div>
             )}
           </div>
@@ -299,7 +299,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
               onClick={() => scrollToPage(pageNumber - 1)} 
               disabled={pageNumber <= 1}
               className="p-1.5 rounded-lg hover:bg-accent/10 disabled:opacity-30 transition-colors"
-              title="Previous Page (Up Arrow / K)"
+              title="上一页 (上方向键 / K)"
             >
               <ChevronUp className="w-5 h-5" />
             </button>
@@ -307,7 +307,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
               onClick={() => scrollToPage(pageNumber + 1)} 
               disabled={pageNumber >= numPages}
               className="p-1.5 rounded-lg hover:bg-accent/10 disabled:opacity-30 transition-colors"
-              title="Next Page (Down Arrow / J)"
+              title="下一页 (下方向键 / J)"
             >
               <ChevronDown className="w-5 h-5" />
             </button>
@@ -318,7 +318,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
           <button 
             onClick={() => setScale(s => Math.max(0.2, s - 0.1))} 
             className="p-1.5 rounded-full hover:bg-accent/10"
-            title="Zoom Out (Ctrl -)"
+            title="缩小 (Ctrl -)"
           >
             <ZoomOut className="w-5 h-5" />
           </button>
@@ -326,7 +326,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
           <button 
             onClick={() => setScale(s => Math.min(3, s + 0.1))} 
             className="p-1.5 rounded-full hover:bg-accent/10"
-            title="Zoom In (Ctrl +)"
+            title="放大 (Ctrl +)"
           >
             <ZoomIn className="w-5 h-5" />
           </button>
@@ -334,9 +334,9 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
           <button 
             onClick={() => setScale(1.0)} 
             className="px-3 py-1 text-xs font-medium bg-accent/5 hover:bg-accent/10 rounded-md border border-accent/10 transition-colors"
-            title="Reset Zoom (Ctrl 0)"
+            title="重置缩放 (Ctrl 0)"
           >
-            Fit Width
+            适应宽度
           </button>
         </div>
       </div>
@@ -364,7 +364,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
       {/* Selection Hint */}
       <div className="px-4 py-2 bg-accent/5 border-t border-accent/10 flex items-center justify-center space-x-2 text-[10px] uppercase tracking-widest text-accent/40 font-bold">
         <MousePointer2 className="w-3 h-3" />
-        <span>Select text to translate</span>
+        <span>选中文字即可翻译</span>
       </div>
     </div>
   );
