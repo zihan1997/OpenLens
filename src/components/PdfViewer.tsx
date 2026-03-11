@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Document, Page, pdfjs } from 'react-pdf';
+import { Document, Page, pdfjs, Outline } from 'react-pdf';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
-import { ChevronUp, ChevronDown, ZoomIn, ZoomOut, Maximize2, Loader2, MousePointer2, Sparkles } from 'lucide-react';
+import { ChevronUp, ChevronDown, ZoomIn, ZoomOut, Maximize2, Loader2, MousePointer2, Sparkles, List, X as CloseIcon } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 // Set worker URL for pdfjs
@@ -38,6 +38,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
   
   const [selectionCoords, setSelectionCoords] = useState<{ x: number, y: number } | null>(null);
   const [selectedText, setSelectedText] = useState<string>("");
+  const [showOutline, setShowOutline] = useState<boolean>(false);
 
   // Memoize pages to prevent re-renders of the entire document when unrelated state changes
   const pages = React.useMemo(() => {
@@ -162,6 +163,12 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
     }
   };
 
+  const onOutlineItemClick = ({ pageNumber: nextItemPageNumber }: { pageNumber: number }) => {
+    setPageNumber(nextItemPageNumber);
+    scrollToPage(nextItemPageNumber);
+    setShowOutline(false);
+  };
+
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const container = e.currentTarget;
     const children = container.querySelectorAll('[id^="pdf-page-"]');
@@ -197,6 +204,49 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
 
   return (
     <div className="flex flex-col h-full bg-sepia/20 rounded-xl overflow-hidden shadow-inner border border-accent/10 relative">
+      {/* Outline Sidebar */}
+      <AnimatePresence>
+        {showOutline && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowOutline(false)}
+              className="absolute inset-0 bg-black/20 backdrop-blur-[2px] z-40"
+            />
+            <motion.div
+              initial={{ x: '-100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '-100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              className="absolute left-0 top-0 bottom-0 w-72 bg-white shadow-2xl z-50 flex flex-col border-r border-accent/10"
+            >
+              <div className="p-4 border-b border-accent/10 flex items-center justify-between bg-accent/5">
+                <h3 className="serif font-bold text-accent flex items-center">
+                  <List className="w-4 h-4 mr-2" />
+                  Table of Contents
+                </h3>
+                <button 
+                  onClick={() => setShowOutline(false)}
+                  className="p-1 hover:bg-accent/10 rounded-full transition-colors"
+                >
+                  <CloseIcon className="w-4 h-4 text-accent/60" />
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto p-4 outline-container">
+                <Document file={file}>
+                  <Outline 
+                    onItemClick={onOutlineItemClick}
+                    className="pdf-outline"
+                  />
+                </Document>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
       {/* Floating Action Button */}
       <AnimatePresence>
         {selectionCoords && (
@@ -226,6 +276,13 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
       {/* Controls */}
       <div className="flex items-center justify-between px-6 py-3 bg-white/50 backdrop-blur-sm border-b border-accent/10 z-10">
         <div className="flex items-center space-x-4">
+          <button
+            onClick={() => setShowOutline(true)}
+            className="p-2 hover:bg-accent/10 rounded-lg transition-colors text-accent"
+            title="Table of Contents"
+          >
+            <List className="w-5 h-5" />
+          </button>
           <div className="flex items-center bg-accent/5 rounded-lg px-3 py-1 border border-accent/10">
             <span className="serif text-lg font-medium">
               Page {pageNumber} <span className="text-accent/40 mx-1">/</span> {numPages}
