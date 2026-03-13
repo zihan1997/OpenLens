@@ -39,34 +39,60 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
   const [selectionCoords, setSelectionCoords] = useState<{ x: number, y: number } | null>(null);
   const [selectedText, setSelectedText] = useState<string>("");
   const [showOutline, setShowOutline] = useState<boolean>(false);
+  const [visiblePages, setVisiblePages] = useState<Set<number>>(new Set([initialPage]));
 
   // Memoize pages to prevent re-renders of the entire document when unrelated state changes
   const pages = React.useMemo(() => {
     if (numPages <= 0) return null;
-    return Array.from(new Array(numPages), (el, index) => (
-      <div 
-        key={`page_${index + 1}`} 
-        id={`pdf-page-${index + 1}`}
-        className="shadow-2xl bg-white"
-      >
-        <Page 
-          pageNumber={index + 1} 
-          width={containerWidth}
-          scale={scale}
-          renderAnnotationLayer={true}
-          renderTextLayer={true}
-          onRenderTextLayerSuccess={() => {
-            renderedPagesRef.current.add(index + 1);
-          }}
-          loading={
-            <div className="flex items-center justify-center bg-white" style={{ width: containerWidth * scale, height: containerWidth * scale * 1.4 }}>
-              <Loader2 className="w-6 h-6 animate-spin text-accent/20" />
-            </div>
-          }
-        />
-      </div>
-    ));
-  }, [numPages, containerWidth, scale]);
+    
+    // Windowing: Only render pages that are near the current page or have been seen
+    // This significantly improves performance for large PDFs
+    const buffer = 3; // Number of pages to keep in DOM around the current page
+    
+    return Array.from(new Array(numPages), (el, index) => {
+      const pageNum = index + 1;
+      const isNearCurrent = Math.abs(pageNum - pageNumber) <= buffer;
+      const hasBeenVisible = visiblePages.has(pageNum);
+      
+      // If not near current and never visible, render a placeholder to maintain scroll height
+      if (!isNearCurrent && !hasBeenVisible) {
+        return (
+          <div 
+            key={`page_${pageNum}`} 
+            id={`pdf-page-${pageNum}`}
+            className="shadow-2xl bg-app border border-accent/5 flex items-center justify-center"
+            style={{ width: containerWidth * scale, height: containerWidth * scale * 1.414 }}
+          >
+            <div className="text-accent/10 serif text-4xl font-bold">{pageNum}</div>
+          </div>
+        );
+      }
+
+      return (
+        <div 
+          key={`page_${pageNum}`} 
+          id={`pdf-page-${pageNum}`}
+          className="shadow-2xl bg-app transition-opacity duration-300"
+        >
+          <Page 
+            pageNumber={pageNum} 
+            width={containerWidth}
+            scale={scale}
+            renderAnnotationLayer={true}
+            renderTextLayer={true}
+            onRenderTextLayerSuccess={() => {
+              renderedPagesRef.current.add(pageNum);
+            }}
+            loading={
+              <div className="flex items-center justify-center bg-app" style={{ width: containerWidth * scale, height: containerWidth * scale * 1.414 }}>
+                <Loader2 className="w-6 h-6 animate-spin text-accent/20" />
+              </div>
+            }
+          />
+        </div>
+      );
+    });
+  }, [numPages, containerWidth, scale, pageNumber, visiblePages]);
   
   useEffect(() => {
     const checkReady = () => {
@@ -82,7 +108,9 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
 
   const updateWidth = useCallback(() => {
     if (containerRef.current) {
-      const width = containerRef.current.clientWidth - 64;
+      const isMobile = window.innerWidth < 768;
+      const padding = isMobile ? 20 : 64;
+      const width = containerRef.current.clientWidth - padding;
       setContainerWidth(width);
     }
   }, []);
@@ -173,14 +201,28 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
     const container = e.currentTarget;
     const children = container.querySelectorAll('[id^="pdf-page-"]');
     let currentInView = 1;
+    const newVisiblePages = new Set(visiblePages);
     
     for (let i = 0; i < children.length; i++) {
       const child = children[i] as HTMLElement;
+      const rect = child.getBoundingClientRect();
+      const containerRect = container.getBoundingClientRect();
+      
+      // Check if page is visible in container
+      if (rect.top < containerRect.bottom && rect.bottom > containerRect.top) {
+        const pageNum = parseInt(child.id.replace('pdf-page-', ''));
+        newVisiblePages.add(pageNum);
+      }
+
       if (child.offsetTop <= container.scrollTop + container.clientHeight / 3) {
         currentInView = parseInt(child.id.replace('pdf-page-', ''));
       }
     }
     
+    if (newVisiblePages.size !== visiblePages.size) {
+      setVisiblePages(newVisiblePages);
+    }
+
     if (currentInView !== pageNumber) {
       setPageNumber(currentInView);
       onPageChange?.(currentInView);
@@ -203,7 +245,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
   }
 
   return (
-    <div className="flex flex-col h-full bg-sepia/20 rounded-xl overflow-hidden shadow-inner border border-accent/10 relative">
+    <div className="flex flex-col h-full bg-app rounded-xl overflow-hidden shadow-inner border border-accent/10 relative">
       {/* Outline Sidebar */}
       <AnimatePresence>
         {showOutline && (
@@ -220,12 +262,12 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
               animate={{ x: 0 }}
               exit={{ x: '-100%' }}
               transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-              className="absolute left-0 top-0 bottom-0 w-72 bg-white shadow-2xl z-50 flex flex-col border-r border-accent/10"
+              className="absolute left-0 top-0 bottom-0 w-72 bg-app shadow-2xl z-50 flex flex-col border-r border-accent/10"
             >
-              <div className="p-4 border-b border-accent/10 flex items-center justify-between bg-accent/5">
+              <div className="p-4 border-b border-accent/10 flex items-center justify-between bg-app">
                 <h3 className="serif font-bold text-accent flex items-center">
                   <List className="w-4 h-4 mr-2" />
-                  目录
+                  Contents
                 </h3>
                 <button 
                   onClick={() => setShowOutline(false)}
@@ -268,29 +310,29 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
             className="bg-accent text-white px-3 py-1.5 rounded-full shadow-xl flex items-center space-x-2 hover:bg-accent/90 transition-all active:scale-[0.98] border border-white/20"
           >
             <Sparkles className="w-3.5 h-3.5" />
-            <span className="text-xs font-bold uppercase tracking-tighter">翻译</span>
+            <span className="text-xs font-bold uppercase tracking-tighter">Translate</span>
           </motion.button>
         )}
       </AnimatePresence>
 
       {/* Controls */}
-      <div className="flex items-center justify-between px-6 py-3 bg-white/50 backdrop-blur-sm border-b border-accent/10 z-10">
-        <div className="flex items-center space-x-4">
+      <div className="flex flex-col md:flex-row items-center justify-between px-4 md:px-6 py-2 md:py-3 bg-card/50 backdrop-blur-sm border-b border-accent/10 z-10 space-y-2 md:space-y-0">
+        <div className="flex items-center justify-between w-full md:w-auto space-x-2 md:space-x-4">
           <button
             onClick={() => setShowOutline(true)}
             className="p-2 hover:bg-accent/10 rounded-lg transition-colors text-accent"
-            title="目录"
+            title="Contents"
           >
             <List className="w-5 h-5" />
           </button>
-          <div className="flex items-center bg-accent/5 rounded-lg px-3 py-1 border border-accent/10">
-            <span className="serif text-lg font-medium">
-              第 {pageNumber} 页 <span className="text-accent/40 mx-1">/</span> 共 {numPages} 页
+          <div className="flex items-center bg-accent/5 rounded-lg px-2 md:px-3 py-1 border border-accent/10">
+            <span className="serif text-sm md:text-lg font-medium whitespace-nowrap">
+              {pageNumber} / {numPages}
             </span>
             {isCurrentPageReady && (
-              <div className="flex items-center space-x-1 ml-2 pl-2 border-l border-accent/10">
+              <div className="hidden sm:flex items-center space-x-1 ml-2 pl-2 border-l border-accent/10">
                 <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
-                <span className="text-[9px] text-emerald-600 font-bold uppercase tracking-tighter">已就绪</span>
+                <span className="text-[9px] text-emerald-600 font-bold uppercase tracking-tighter">Ready</span>
               </div>
             )}
           </div>
@@ -299,7 +341,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
               onClick={() => scrollToPage(pageNumber - 1)} 
               disabled={pageNumber <= 1}
               className="p-1.5 rounded-lg hover:bg-accent/10 disabled:opacity-30 transition-colors"
-              title="上一页 (上方向键 / K)"
+              title="Previous Page"
             >
               <ChevronUp className="w-5 h-5" />
             </button>
@@ -307,36 +349,36 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
               onClick={() => scrollToPage(pageNumber + 1)} 
               disabled={pageNumber >= numPages}
               className="p-1.5 rounded-lg hover:bg-accent/10 disabled:opacity-30 transition-colors"
-              title="下一页 (下方向键 / J)"
+              title="Next Page"
             >
               <ChevronDown className="w-5 h-5" />
             </button>
           </div>
         </div>
 
-        <div className="flex items-center space-x-2">
+        <div className="flex items-center justify-center w-full md:w-auto space-x-2">
           <button 
             onClick={() => setScale(s => Math.max(0.2, s - 0.1))} 
             className="p-1.5 rounded-full hover:bg-accent/10"
-            title="缩小 (Ctrl -)"
+            title="Zoom Out"
           >
-            <ZoomOut className="w-5 h-5" />
+            <ZoomOut className="w-4 h-4 md:w-5 h-5" />
           </button>
-          <span className="text-sm font-mono w-12 text-center">{Math.round(scale * 100)}%</span>
+          <span className="text-xs md:text-sm font-mono w-10 md:w-12 text-center">{Math.round(scale * 100)}%</span>
           <button 
             onClick={() => setScale(s => Math.min(3, s + 0.1))} 
             className="p-1.5 rounded-full hover:bg-accent/10"
-            title="放大 (Ctrl +)"
+            title="Zoom In"
           >
-            <ZoomIn className="w-5 h-5" />
+            <ZoomIn className="w-4 h-4 md:w-5 h-5" />
           </button>
-          <div className="w-px h-4 bg-accent/10 mx-2" />
+          <div className="w-px h-4 bg-accent/10 mx-1 md:mx-2" />
           <button 
             onClick={() => setScale(1.0)} 
-            className="px-3 py-1 text-xs font-medium bg-accent/5 hover:bg-accent/10 rounded-md border border-accent/10 transition-colors"
-            title="重置缩放 (Ctrl 0)"
+            className="px-2 md:px-3 py-1 text-[10px] md:text-xs font-medium bg-accent/5 hover:bg-accent/10 rounded-md border border-accent/10 transition-colors"
+            title="Fit Width"
           >
-            适应宽度
+            Fit Width
           </button>
         </div>
       </div>
@@ -344,7 +386,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
       {/* PDF Content - Vertical Scroll Mode */}
       <div 
         ref={containerRef}
-        className="flex-1 overflow-auto p-8 flex flex-col items-center space-y-8 scroll-smooth"
+        className="flex-1 overflow-auto p-4 md:p-8 flex flex-col items-center space-y-4 md:space-y-8 scroll-smooth bg-app"
         onMouseUp={handleMouseUp}
         onScroll={handleScroll}
       >
@@ -364,7 +406,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
       {/* Selection Hint */}
       <div className="px-4 py-2 bg-accent/5 border-t border-accent/10 flex items-center justify-center space-x-2 text-[10px] uppercase tracking-widest text-accent/40 font-bold">
         <MousePointer2 className="w-3 h-3" />
-        <span>选中文字即可翻译</span>
+        <span>Select text to translate</span>
       </div>
     </div>
   );

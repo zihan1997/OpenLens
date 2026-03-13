@@ -8,23 +8,42 @@ export interface TranslationOptions {
   baseUrl?: string;
   apiKey?: string;
   useProxy?: boolean;
+  sourceLanguage?: string;
+  targetLanguage?: string;
+  backgroundContext?: string;
+  previousContext?: {
+    original: string;
+    translation: string;
+  };
 }
 
 const geminiAi = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
 
-const SYSTEM_PROMPT = `Translate the following scholarly or philosophical text into Chinese. 
+const getSystemPrompt = (options: TranslationOptions) => {
+  const source = options.sourceLanguage || "the original language";
+  const target = options.targetLanguage || "Chinese";
+  const background = options.backgroundContext ? `\nBackground/Context: ${options.backgroundContext}` : "";
+  const context = options.previousContext 
+    ? `\n\nFor continuity, here is the previous segment translated:
+Original: "${options.previousContext.original}"
+Translation: "${options.previousContext.translation}"
+Please ensure terminology and style consistency with this previous segment.` 
+    : "";
+
+  return `Translate the following scholarly or philosophical text from ${source} into ${target}.${background}${context}
 Requirements: 
 1. Use precise academic, psychological, or philosophical terminology appropriate for the context.
 2. Maintain the scholarly tone, elegance, and depth of the original text.
 3. Provide a brief explanation for extremely complex or culture-specific terms if necessary.
-4. Ensure the translation is fluent and natural in Chinese, avoiding awkward "translation-ese".
+4. Ensure the translation is fluent and natural in ${target}, avoiding awkward "translation-ese".
 5. Format with clear paragraphs.`;
+};
 
-async function translateWithGemini(text: string, model: string = "gemini-3.1-pro-preview"): Promise<string> {
+async function translateWithGemini(text: string, options: TranslationOptions): Promise<string> {
   try {
     const response: GenerateContentResponse = await geminiAi.models.generateContent({
-      model: model,
-      contents: `${SYSTEM_PROMPT}\n\nText: ${text}`,
+      model: options.model || "gemini-3.1-pro-preview",
+      contents: `${getSystemPrompt(options)}\n\nText: ${text}`,
     });
     return response.text || "Translation failed.";
   } catch (error) {
@@ -41,7 +60,7 @@ async function translateWithOllamaCloud(text: string, options: TranslationOption
       body: JSON.stringify({
         text,
         model: options.model || "minimax",
-        systemPrompt: SYSTEM_PROMPT,
+        systemPrompt: getSystemPrompt(options),
         host: options.baseUrl || "https://ollama.com"
       })
     });
@@ -91,7 +110,7 @@ export async function translatePhilosophicalTextStream(
     if (options.provider === 'gemini') {
       const response = await geminiAi.models.generateContentStream({
         model: options.model || "gemini-3.1-pro-preview",
-        contents: `${SYSTEM_PROMPT}\n\nText: ${text}`,
+        contents: `${getSystemPrompt(options)}\n\nText: ${text}`,
       });
 
       for await (const chunk of response) {
@@ -106,7 +125,7 @@ export async function translatePhilosophicalTextStream(
         body: JSON.stringify({
           text,
           model: options.model || "minimax",
-          systemPrompt: SYSTEM_PROMPT,
+          systemPrompt: getSystemPrompt(options),
           host: options.baseUrl || "https://ollama.com"
         })
       });
@@ -137,7 +156,7 @@ export async function translatePhilosophicalText(text: string, options: Translat
   
   try {
     if (options.provider === 'gemini') {
-      return await translateWithGemini(text, options.model);
+      return await translateWithGemini(text, options);
     } else if (options.provider === 'ollama-cloud') {
       return await translateWithOllamaCloud(text, options);
     }
